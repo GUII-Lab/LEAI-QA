@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedback Session Messages</title>
+    <style>
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .container {
+            display: flex;
+            height: 100%;
+        }
+
+        .sidebar {
+            padding: 20px;
+            width: 30%;
+            background: #fff;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+            overflow-y: auto;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .ai-message {
+            background-color: #e1f5fe;
+        }
+
+        .student-message {
+            background-color: #fff9c4;
+        }
+
+        input,
+        select,
+        button {
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: calc(100% - 22px);
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+
+        li:hover {
+            background: #f9f9f9;
+        }
+
+        .leai-environment-banner {
+            position: sticky;
+            top: 0;
+            z-index: 300;
+            width: 100%;
+            padding: 7px 16px;
+            box-sizing: border-box;
+            background: #7c2d12;
+            color: #fff7ed;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="sidebar">
+            <!-- Filter UI Elements -->
+            <label for="startTime">Start Time:</label>
+            <input type="datetime-local" id="startTime">
+
+            <label for="endTime">End Time:</label>
+            <input type="datetime-local" id="endTime">
+
+            <label for="gptUsed">GPT Used:</label>
+            <select id="gptUsed">
+                <option value="">Select GPT Used</option>
+                <!-- Options will be populated dynamically -->
+            </select>
+
+            <button id="applyFilters">Apply Filters</button>
+
+            <ul id="sessionList"></ul>
+        </div>
+        <div class="main-content" id="messageDisplay">
+            <!-- Messages will be displayed here -->
+        </div>
+    </div>
+
+    <script src="leai-instructor-auth.js?v=leai-env-identity-r1"></script>
+    <script src="leai-deployment-config.js?v=adecfb4"></script>
+    <script src="leai-environment.js?v=adecfb4"></script>
+    <script src="leai-shared.js?v=adecfb4"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async function () {
+            const applyFiltersBtn = document.getElementById('applyFilters');
+            const messageDisplay = document.getElementById('messageDisplay');
+            const session = getSession();
+
+            function redirectToInstructorHome() {
+                window.location.replace(leaiInstructorAuth.instructorHomeHref());
+            }
+
+            if (!leaiInstructorAuth.hasUsableInstructorSession(session)
+                    || !String(session.courseId || '').trim()) {
+                redirectToInstructorHome();
+                return;
+            }
+
+            if (window.LEAI_ENVIRONMENT && window.LEAI_ENVIRONMENT.name === 'qa') {
+                let identity;
+                try {
+                    identity = await window.LEAI_ENVIRONMENT_IDENTITY_READY;
+                } catch (error) {
+                    identity = null;
+                }
+                if (!identity || identity.verified !== true) {
+                    messageDisplay.textContent = 'QA environment identity could not be verified. Responses are unavailable.';
+                    return;
+                }
+            }
+
+            let response;
+            try {
+                response = await authorizedFetch(
+                    API + '/feedbackList/?course_id=' + encodeURIComponent(session.courseId)
+                );
+            } catch (error) {
+                messageDisplay.textContent = 'Responses are unavailable. Please try again.';
+                return;
+            }
+
+            if (response.status === 401) {
+                redirectToInstructorHome();
+                return;
+            }
+            if (response.status === 403) {
+                messageDisplay.textContent = 'You do not have access to this course\'s responses.';
+                return;
+            }
+            if (!response.ok) {
+                messageDisplay.textContent = 'Responses are unavailable. Please try again.';
+                return;
+            }
+
+            let data;
+            try {
+                data = await response.json();
+            } catch (error) {
+                messageDisplay.textContent = 'Responses are unavailable. Please try again.';
+                return;
+            }
+            if (!data || typeof data !== 'object' || Array.isArray(data)
+                    || !Object.values(data).every(Array.isArray)) {
+                messageDisplay.textContent = 'Responses are unavailable. Please try again.';
+                return;
+            }
+
+            populateGptUsedOptions(data);
+            applyFiltersBtn.onclick = () => applyFilters(data);
+
+            function populateGptUsedOptions(data) {
+                const gptUsedSelect = document.getElementById('gptUsed');
+                const gptUseds = new Set();
+                Object.values(data).flat().forEach(message => {
+                    gptUseds.add(message.gpt_used);
+                });
+                gptUseds.forEach(gptUsed => {
+                    const option = document.createElement('option');
+                    option.value = gptUsed;
+                    option.textContent = gptUsed;
+                    gptUsedSelect.appendChild(option);
+                });
+            }
+
+            function applyFilters(data) {
+                const startTime = document.getElementById('startTime').value;
+                const endTime = document.getElementById('endTime').value;
+                const gptUsed = document.getElementById('gptUsed').value;
+
+                const filteredData = {};
+                Object.entries(data).forEach(([sessionId, messages]) => {
+                    const filteredMessages = messages.filter(message => {
+                        const messageTime = new Date(message.created_at).getTime();
+                        const start = startTime ? new Date(startTime).getTime() : null;
+                        const end = endTime ? new Date(endTime).getTime() : null;
+                        return (!start || messageTime >= start) &&
+                            (!end || messageTime <= end) &&
+                            (!gptUsed || message.gpt_used === gptUsed);
+                    });
+                    if (filteredMessages.length > 0) {
+                        filteredData[sessionId] = filteredMessages;
+                    }
+                });
+
+                displaySessions(filteredData);
+            }
+
+            function displaySessions(data) {
+                const sessionList = document.getElementById('sessionList');
+                sessionList.replaceChildren();
+                Object.entries(data).forEach(([sessionId, messages]) => {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = `Session ${sessionId} (${messages.length} messages) - ${messages[0].gpt_used}`;
+                    listItem.onclick = () => displayMessages(sessionId, messages);
+                    sessionList.appendChild(listItem);
+                });
+            }
+
+            function displayMessages(sessionId, messages) {
+                const messageDisplay = document.getElementById('messageDisplay');
+                messageDisplay.replaceChildren();
+                messages.forEach(message => {
+                    const div = document.createElement('div');
+                    const sender = String(message.sent_by || 'unknown');
+                    const contentLine = document.createElement('p');
+                    const senderLabel = document.createElement('strong');
+                    const content = document.createElement('span');
+                    const sentLine = document.createElement('p');
+                    const sentAt = document.createElement('small');
+
+                    div.className = 'message ' + (sender === 'student' ? 'student-message' : 'ai-message');
+                    senderLabel.textContent = sender.replace('_', ' ').toUpperCase() + ':';
+                    content.textContent = ' ' + String(message.content || '');
+                    sentAt.textContent = 'Sent on: ' + String(message.created_at || '');
+                    contentLine.appendChild(senderLabel);
+                    contentLine.appendChild(content);
+                    sentLine.appendChild(sentAt);
+                    div.appendChild(contentLine);
+                    div.appendChild(sentLine);
+                    messageDisplay.appendChild(div);
+                });
+            }
+        });
+    </script>
+</body>
+
+</html>
