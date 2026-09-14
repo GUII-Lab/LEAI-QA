@@ -1,1 +1,1 @@
-window.LEAI_DEPLOYMENT_CONFIG = {"environment":"qa","apiBase":"https://guiidata-leai-qa-f30daf4812c3.herokuapp.com/datapipeline/api","publicBaseUrl":"https://guii-lab.github.io/LEAI-QA/LEAI/","buildId":"fe2f113","emailEnabled":false};
+window.LEAI_DEPLOYMENT_CONFIG = {"environment":"qa","apiBase":"https://guiidata-leai-qa-f30daf4812c3.herokuapp.com/datapipeline/api","publicBaseUrl":"https://guii-lab.github.io/LEAI-QA/LEAI/","buildId":"49606b90740a271c14b703acdf300e2004bba55d","emailEnabled":false};

@@ -160,7 +160,7 @@ if (!workflow) {
 
         assert.deepEqual(
             steps.filter((step) => step.uses).map((step) => step.uses),
-            ['actions/checkout@v7', 'astral-sh/setup-uv@v10', 'actions/checkout@v7'],
+            ['actions/checkout@v7', 'astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4', 'actions/checkout@v7'],
         );
 
         assert.equal(sourceCheckout.index, 0);
@@ -169,7 +169,7 @@ if (!workflow) {
         assert.equal(sourceCheckout.with.get('persist-credentials'), 'false');
         assert.equal(sourceCheckout.with.has('token'), false);
 
-        assert.equal(setupUv.uses, 'astral-sh/setup-uv@v10');
+        assert.equal(setupUv.uses, 'astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4');
         assert.equal(targetCheckout.uses, 'actions/checkout@v7');
         assert.deepEqual(Object.fromEntries(targetCheckout.with), {
             repository: 'GUII-Lab/LEAI-QA',
@@ -187,12 +187,15 @@ if (!workflow) {
 
     test('all frontend tests and the Task 5 builder run from source before any target credential exists', () => {
         const setupUv = namedStep(steps, 'Set up uv');
+        const installNode = namedStep(steps, 'Install frontend Node dependencies');
         const nodeTests = namedStep(steps, 'Run frontend Node tests');
         const pythonTests = namedStep(steps, 'Run frontend Python tests');
         const build = namedStep(steps, 'Build QA artifact');
         const preflight = namedStep(steps, 'Verify QA artifact before target checkout');
         const targetCheckout = namedStep(steps, 'Checkout QA Pages target');
 
+        assert.equal(installNode['working-directory'], 'source');
+        assert.equal(compactCommand(installNode.run), 'npm ci');
         assert.equal(nodeTests['working-directory'], 'source');
         assert.equal(compactCommand(nodeTests.run), 'node --test LEAI/tests/*.test.js');
         assert.equal(pythonTests['working-directory'], 'source');
@@ -206,6 +209,7 @@ if (!workflow) {
             'uv run python scripts/build-leai-qa-artifact.py --source . --output "$RUNNER_TEMP/leai-qa" --api-base "${{ vars.LEAI_QA_API_BASE }}" --build-id "${{ github.sha }}"',
         );
         assert.ok(setupUv.index < pythonTests.index);
+        assert.ok(installNode.index < nodeTests.index);
         assert.ok(nodeTests.index < pythonTests.index);
         assert.ok(pythonTests.index < build.index);
         assert.ok(build.index < preflight.index);
@@ -304,6 +308,7 @@ if (!workflow) {
 
         assert.match(publish.run, /git -C target config user\.name "github-actions\[bot\]"/);
         assert.match(publish.run, /git -C target config user\.email "41898282\+github-actions\[bot\]@users\.noreply\.github\.com"/);
+        assert.match(publish.run, /git -C target remote set-url origin git@github\.com:GUII-Lab\/LEAI-QA\.git/);
         assert.match(publish.run, /git -C target add --all -- \./);
         assert.match(
             publish.run,
